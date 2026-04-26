@@ -9,3 +9,5 @@ pub mod new;
 pub mod shell;
 pub mod tx;
 pub mod wallet;
+pub mod tutorial;
+pub mod benchmark;

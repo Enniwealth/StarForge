@@ -1,9 +1,9 @@
-use crate::utils::{config, crypto, horizon, multisig, print as p};
+use crate::utils::{config, crypto, hardware_wallet, horizon, multisig, print as p};
 use anyhow::Result;
 use chrono::Utc;
 use clap::Subcommand;
 use colored::*;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use rand::RngCore;
 use stellar_strkey::ed25519::{PrivateKey as StellarPrivateKey, PublicKey as StellarPublicKey};
 
@@ -47,6 +47,23 @@ pub enum WalletCommands {
     Rename {
         old_name: String,
         new_name: String,
+    },
+
+    /// Connect to a hardware wallet (Ledger/Trezor)
+    Connect {
+        #[arg(value_enum)]
+        device: hardware_wallet::HardwareWalletKind,
+    },
+
+    /// Sign an arbitrary message using a local or hardware-backed key
+    Sign {
+        /// Wallet name to use (for local signing)
+        name: String,
+        /// Message to sign (utf-8)
+        message: String,
+        /// Use a hardware wallet instead of a local secret key
+        #[arg(long, value_enum)]
+        hardware: Option<hardware_wallet::HardwareWalletKind>,
     },
     /// Multi-signature account management
     #[command(subcommand)]
@@ -116,8 +133,70 @@ pub fn handle(cmd: WalletCommands) -> Result<()> {
         WalletCommands::Fund { name } => fund_wallet(name),
         WalletCommands::Remove { name } => remove(name),
         WalletCommands::Rename { old_name, new_name } => rename(old_name, new_name),
+        WalletCommands::Connect { device } => connect_hardware(device),
+        WalletCommands::Sign { name, message, hardware } => sign_message(name, message, hardware),
         WalletCommands::Multisig(cmd) => handle_multisig(cmd),
     }
+}
+
+fn connect_hardware(device: hardware_wallet::HardwareWalletKind) -> Result<()> {
+    p::header("Hardware Wallet");
+    p::step(1, 2, &format!("Connecting to {:?}…", device));
+    hardware_wallet::connect(device)?;
+    p::step(2, 2, "Device detected");
+    println!();
+    p::success(&format!("{:?} connected (device detection only).", device));
+    Ok(())
+}
+
+fn sign_message(
+    name: String,
+    message: String,
+    hardware: Option<hardware_wallet::HardwareWalletKind>,
+) -> Result<()> {
+    p::header("Sign Message");
+    p::kv("Wallet", &name);
+
+    let msg_bytes = message.as_bytes();
+
+    if let Some(kind) = hardware {
+        p::kv("Signer", &format!("{:?}", kind));
+        let sig = hardware_wallet::sign(kind, msg_bytes)?;
+        p::separator();
+        p::kv_accent("Message", &message);
+        p::kv("Signature (hex)", &hex::encode(sig));
+        p::separator();
+        return Ok(());
+    }
+
+    let cfg = config::load()?;
+    let w = cfg
+        .wallets
+        .iter()
+        .find(|w| w.name == name)
+        .ok_or_else(|| anyhow::anyhow!("Wallet '{}' not found", name))?;
+
+    let sk = w
+        .secret_key
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Wallet '{}' has no local secret key", name))?;
+
+    let plain_sk = if !sk.contains(':') && sk.starts_with('S') && sk.len() == 56 {
+        sk.clone()
+    } else {
+        let pwd = crypto::prompt_password(&format!("Enter password for wallet '{}'", name), false)?;
+        crypto::decrypt_secret(&pwd, sk).map_err(|_| anyhow::anyhow!("Incorrect password or unable to decrypt."))?
+    };
+
+    let decoded_secret = StellarPrivateKey::from_string(&plain_sk)?;
+    let signing_key = SigningKey::from_bytes(&decoded_secret.0);
+    let sig = signing_key.sign(msg_bytes);
+
+    p::separator();
+    p::kv_accent("Message", &message);
+    p::kv("Signature (hex)", &hex::encode(sig.to_bytes()));
+    p::separator();
+    Ok(())
 }
 
 fn generate_keypair() -> (String, String) {

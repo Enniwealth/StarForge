@@ -34,6 +34,18 @@ urlencoding = "2.1"
 indicatif = "0.17.7"
 libloading = "0.8.1"
 uuid = { version = "1.6.1", features = ["v4"] }
+hidapi = { version = "2.6.5", optional = true }
+hex = "0.4.3"
+
+[features]
+hardware-wallet = ["dep:hidapi"]
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "benchmarks"
+harness = false
 
 [profile.release]
 opt-level = 3

@@ -1,11 +1,14 @@
 pub mod config;
 pub mod crypto;
+pub mod hardware_wallet;
 pub mod horizon;
 pub mod multisig;
 pub mod notifications;
 pub mod print;
+pub mod profiler;
 pub mod repl;
 pub mod soroban;
 pub mod telemetry;
 pub mod sandbox;
 pub mod stream;
+pub mod tutorial_engine;

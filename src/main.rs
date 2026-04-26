@@ -51,6 +51,13 @@ enum Commands {
 
     /// Live monitoring (contract events or wallet threshold)
     Monitor(commands::monitor::MonitorArgs),
+
+    /// Interactive CLI tutorials
+    #[command(subcommand)]
+    Tutorial(commands::tutorial::TutorialCommands),
+
+    /// Performance benchmarking utilities
+    Benchmark(commands::benchmark::BenchmarkArgs),
 }
 
 fn main() {
@@ -71,6 +78,8 @@ fn main() {
         Commands::Completions(_) => "completions",
         Commands::Shell(_) => "shell",
         Commands::Monitor(_) => "monitor",
+        Commands::Tutorial(_) => "tutorial",
+        Commands::Benchmark(_) => "benchmark",
     }.to_string();
 
     let start = std::time::Instant::now();
@@ -85,6 +94,8 @@ fn main() {
         Commands::Completions(shell) => commands::completions::handle(shell),
         Commands::Shell(args) => commands::shell::handle(args),
         Commands::Monitor(args) => commands::monitor::handle(args),
+        Commands::Tutorial(cmd) => commands::tutorial::handle(cmd),
+        Commands::Benchmark(args) => commands::benchmark::handle(args),
     };
     let duration = start.elapsed();
 
