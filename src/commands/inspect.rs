@@ -54,6 +54,12 @@ pub struct StorageArgs {
     /// Output as JSON
     #[arg(long)]
     pub json: bool,
+    /// Maximum number of entries to show
+    #[arg(long, default_value = "20")]
+    pub limit: usize,
+    /// Pagination cursor (entry index to start from)
+    #[arg(long)]
+    pub cursor: Option<usize>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -200,9 +206,26 @@ fn handle_storage(args: StorageArgs) -> Result<()> {
         return Ok(());
     }
 
-    print_storage_table(&result.instance_storage, &args.scope);
+    let entries = paginate(&result.instance_storage, args.cursor, args.limit);
+    let total = result.instance_storage.len();
+    print_storage_table(entries, &args.scope);
+
+    let start = args.cursor.unwrap_or(0);
+    let end = start + entries.len();
+    if end < total {
+        p::info(&format!(
+            "Showing {}-{} of {} entries. Use --cursor {} to see more.",
+            start + 1, end, total, end
+        ));
+    }
     p::separator();
     Ok(())
+}
+
+fn paginate(entries: &[soroban::ContractStorageEntry], cursor: Option<usize>, limit: usize) -> &[soroban::ContractStorageEntry] {
+    let start = cursor.unwrap_or(0).min(entries.len());
+    let end = (start + limit).min(entries.len());
+    &entries[start..end]
 }
 
 // ── Display helpers ───────────────────────────────────────────────────────────
