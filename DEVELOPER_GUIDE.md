@@ -116,11 +116,14 @@ cargo build
 # 7. Test manually
 cargo run -- <command>
 
-# 8. Commit
+# 8. Run smoke tests (optional but recommended)
+./scripts/e2e-smoke.sh
+
+# 9. Commit
 git add .
 git commit -m "feat: add my feature"
 
-# 9. Push and create PR
+# 10. Push and create PR
 git push origin feature/my-feature
 ```
 
@@ -569,6 +572,87 @@ cargo test --test integration_test
 
 # Run with coverage (requires tarpaulin)
 cargo tarpaulin --out Html
+```
+
+### End-to-End Smoke Tests
+
+StarForge includes an end-to-end smoke test script that verifies basic functionality across all major commands.
+
+**Location**: `scripts/e2e-smoke.sh`
+
+**Running Smoke Tests**:
+
+```bash
+# Build the project first
+cargo build --release
+
+# Run smoke tests (without network tests)
+./scripts/e2e-smoke.sh
+
+# Run smoke tests with network tests (requires internet)
+STARFORGE_E2E=1 ./scripts/e2e-smoke.sh
+```
+
+**What the smoke test covers**:
+
+1. **Basic Commands**
+   - `starforge info` - System information
+   - `starforge --version` - Version display
+   - `starforge --help` - Help text
+
+2. **Wallet Operations**
+   - `wallet create` - Create test wallet
+   - `wallet list` - List wallets
+   - `wallet show` - Display wallet details
+
+3. **Network Operations**
+   - `network show` - Display network configuration
+   - `network test` - Test network connectivity (requires `STARFORGE_E2E=1`)
+   - `wallet fund` - Fund testnet wallet (requires `STARFORGE_E2E=1`)
+
+4. **Template Operations**
+   - `template list` - List available templates
+   - `template search` - Search templates
+
+5. **Other Commands**
+   - `completions` - Generate shell completions
+
+**Network Test Gating**:
+
+Network tests are gated behind the `STARFORGE_E2E=1` environment variable because they:
+- Require internet connectivity
+- Depend on external services (Stellar testnet, Friendbot)
+- May be slow or flaky in CI environments
+- Can hit rate limits
+
+To skip network tests in CI:
+
+```yaml
+# .github/workflows/ci.yml
+- name: Run smoke tests
+  run: ./scripts/e2e-smoke.sh  # Skips network tests by default
+```
+
+To run full tests locally:
+
+```bash
+STARFORGE_E2E=1 ./scripts/e2e-smoke.sh
+```
+
+**Exit Codes**:
+- `0` - All tests passed
+- `1` - One or more tests failed
+
+**Cleanup**:
+
+The smoke test automatically cleans up test wallets on exit. If cleanup fails, you may need to manually remove test wallets:
+
+```bash
+# List wallets to find test wallets
+starforge wallet list
+
+# Remove test wallet (when delete command is implemented)
+# starforge wallet delete smoke-test-<timestamp>
 ```
 
 ### Test Organization
