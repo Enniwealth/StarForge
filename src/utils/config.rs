@@ -81,10 +81,17 @@ pub fn validate_file_path(path: &std::path::Path, expected_ext: Option<&str>) ->
 pub fn validate_network(network: &str) -> Result<()> {
     match network {
         "testnet" | "mainnet" | "docker-testnet" => Ok(()),
-        _ => anyhow::bail!(
-            "Unsupported network '{}'. Use 'testnet', 'mainnet', or 'docker-testnet'.",
-            network
-        ),
+        _ => {
+            let cfg = load()?;
+            if cfg.networks.contains_key(network) {
+                Ok(())
+            } else {
+                anyhow::bail!(
+                    "Unsupported network '{}'. Use 'testnet', 'mainnet', 'docker-testnet', or a configured custom network.",
+                    network
+                )
+            }
+        }
     }
 }
 
@@ -174,6 +181,7 @@ fn default_version() -> String {
 pub struct NetworkConfig {
     pub horizon_url: String,
     pub soroban_rpc_url: Option<String>,
+    pub friendbot_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -199,25 +207,22 @@ pub struct WalletRotationRecord {
 impl Default for Config {
     fn default() -> Self {
         let mut networks = HashMap::new();
-        networks.insert(
-            "testnet".to_string(),
-            NetworkConfig {
-                horizon_url: "https://horizon-testnet.stellar.org".to_string(),
-                soroban_rpc_url: Some("https://soroban-testnet.stellar.org".to_string()),
-            },
-        );
-        networks.insert(
-            "mainnet".to_string(),
-            NetworkConfig {
-                horizon_url: "https://horizon.stellar.org".to_string(),
-                soroban_rpc_url: Some("https://mainnet.sorobanrpc.com".to_string()),
-            },
-        );
+        networks.insert("testnet".to_string(), NetworkConfig {
+            horizon_url: "https://horizon-testnet.stellar.org".to_string(),
+            soroban_rpc_url: Some("https://soroban-testnet.stellar.org".to_string()),
+            friendbot_url: Some("https://friendbot.stellar.org".to_string()),
+        });
+        networks.insert("mainnet".to_string(), NetworkConfig {
+            horizon_url: "https://horizon.stellar.org".to_string(),
+            soroban_rpc_url: Some("https://mainnet.sorobanrpc.com".to_string()),
+            friendbot_url: None,
+        });
         networks.insert(
             "docker-testnet".to_string(),
             NetworkConfig {
                 horizon_url: "http://localhost:8000".to_string(),
                 soroban_rpc_url: Some("http://localhost:8000/rpc".to_string()),
+                friendbot_url: None,
             },
         );
 
@@ -470,17 +475,16 @@ pub fn add_custom_network(
     name: String,
     horizon_url: String,
     soroban_rpc_url: Option<String>,
+    friendbot_url: Option<String>,
 ) -> Result<()> {
     if config.networks.contains_key(&name) {
         anyhow::bail!("Network '{}' already exists", name);
     }
-    config.networks.insert(
-        name,
-        NetworkConfig {
-            horizon_url,
-            soroban_rpc_url,
-        },
-    );
+    config.networks.insert(name, NetworkConfig {
+        horizon_url,
+        soroban_rpc_url,
+        friendbot_url,
+    });
     Ok(())
 }
 
