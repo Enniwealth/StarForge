@@ -92,18 +92,45 @@ pub fn handle(args: MonitorArgs) -> Result<()> {
 fn monitor_contract(
     contract_id: &str,
     events_filter: Option<&str>,
+    event_type: Option<&str>,
+    topic: Option<&str>,
+    value: Option<&str>,
     network: &str,
     interval: u64,
     follow: bool,
 ) -> Result<()> {
     config::validate_contract_id(contract_id)?;
 
-    let filter_set: Option<Vec<String>> = events_filter.map(|s| {
+    let legacy_filter_set: Option<Vec<String>> = events_filter.map(|s| {
         s.split(',')
             .map(|x| x.trim().to_lowercase())
             .filter(|x| !x.is_empty())
             .collect()
     });
+
+    let mut stream_filters = EventStreamFilters::default();
+    if let Some(t) = event_type {
+        let normalized = t.trim().to_lowercase();
+        if !normalized.is_empty() {
+            stream_filters.event_type = Some(normalized);
+        }
+    }
+    if let Some(topic_filter) = topic {
+        let segments: Vec<String> = topic_filter
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !segments.is_empty() {
+            stream_filters.topic_segments = Some(segments);
+        }
+    }
+    if let Some(value_match) = value {
+        let trimmed = value_match.trim();
+        if !trimmed.is_empty() {
+            stream_filters.value_match = Some(trimmed.to_string());
+        }
+    }
 
     let rpc_url = soroban::rpc_url(network);
 
@@ -112,27 +139,46 @@ fn monitor_contract(
         rpc_url
     ));
 
-    let mut stream =
-        SorobanEventStream::new(rpc_url, contract_id.to_string()).with_poll_interval(interval);
-    loop {
-        let batch = stream.next_batch()?;
-        for event in batch {
-            let as_text = event.value.to_string();
-            if let Some(ref filters) = filter_set {
-                let mut matches = false;
-                for f in filters {
-                    if as_text.to_lowercase().contains(f) {
-                        matches = true;
-                        break;
+    let running = Arc::new(AtomicBool::new(true));
+    {
+        let running = Arc::clone(&running);
+        ctrlc::set_handler(move || {
+            running.store(false, Ordering::SeqCst);
+        })?;
+    }
+
+    let mut stream = SorobanEventStream::new(rpc_url, contract_id.to_string())
+        .with_poll_interval(interval)
+        .with_filters(stream_filters);
+
+    let mut printed_any = false;
+
+    while running.load(Ordering::SeqCst) {
+        match stream.next_batch() {
+            Ok(batch) => {
+                for event in batch {
+                    let as_text = event.value.to_string();
+                    let topic_text = event.topic.join(",");
+                    let matches_legacy = legacy_filter_set.as_ref().is_none_or(|filters| {
+                        filters.iter().any(|f| {
+                            as_text.to_lowercase().contains(f)
+                                || topic_text.to_lowercase().contains(f)
+                        })
+                    });
+
+                    if matches_legacy {
+                        printed_any = true;
+                        notifications::success(&format!(
+                            "Ledger {} event {}: {}",
+                            event.ledger, event.id, as_text
+                        ));
                     }
-                    printed_any = true;
-                    notifications::success(&format!(
-                        "Ledger {} event {}: {}",
-                        event.ledger, event.id, as_text
-                    ));
                 }
 
                 if !follow {
+                    if !printed_any {
+                        notifications::warn("No matching events in the latest batch.");
+                    }
                     break;
                 }
                 stream.sleep();
