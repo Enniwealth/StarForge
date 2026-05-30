@@ -76,7 +76,7 @@ pub struct TemplateEntry {
     pub name: String,
     pub description: String,
     pub version: String,
-    pub source: String,
+    pub source: TemplateSource,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -160,6 +160,7 @@ impl TemplateEntry {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct TemplateManifest {
     name: Option<String>,
     description: Option<String>,
@@ -219,7 +220,7 @@ pub fn fetch_template_cached(entry: &TemplateEntry, force_refresh: bool) -> Resu
         }
     }
 
-    fetch_git_template(&entry.source, None, &dest)?;
+    fetch_template(entry, &dest)?;
     Ok(dest)
 }
 
@@ -281,7 +282,7 @@ pub fn load_registry() -> Result<TemplateRegistry> {
     // Either forced refresh or cache is missing/old – attempt to fetch remote.
     match fetch_and_cache_remote(&remote_url) {
         Ok(registry) => Ok(registry),
-        Err(fetch_err) => {
+        Err(_fetch_err) => {
             // If the remote fetch failed but a cached registry exists, fall back to it.
             if cache_path.exists() {
                 let contents = fs::read_to_string(&cache_path).with_context(|| {
@@ -291,15 +292,13 @@ pub fn load_registry() -> Result<TemplateRegistry> {
                     .with_context(|| "Failed to parse cached template registry")?;
                 return Ok(registry);
             }
-            // If no cache is available, propagate the fetch error.
-            Err(fetch_err)
+            // No cache available – fall back to the registry bundled with the binary
+            // so the marketplace still works offline on a fresh install.
+            let registry: TemplateRegistry = serde_json::from_str(DEFAULT_REGISTRY)
+                .with_context(|| "Failed to parse bundled default template registry")?;
+            Ok(registry)
         }
     }
-    let contents = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read registry at {}", path.display()))?;
-    let registry: TemplateRegistry = serde_json::from_str(&contents)
-        .with_context(|| "Failed to parse template registry")?;
-    Ok(registry)
 }
 
 pub fn save_registry(registry: &TemplateRegistry) -> Result<()> {
@@ -531,78 +530,9 @@ fn semver_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     parse_version(a).cmp(&parse_version(b))
 }
 
-pub fn template_source_content(name: &str) -> Result<Option<String>> {
-    let entry = match get_template(name) {
-        Ok(entry) => entry,
-        Err(_) => return Ok(None),
-    };
-
-    let content = match &entry.source {
-        serde_json::Value::Object(obj) => {
-            if let Some(type_val) = obj.get("type").and_then(|v| v.as_str()) {
-                match type_val {
-                    "builtin" => {
-                        if let Some(id) = obj.get("id").and_then(|v| v.as_str()) {
-                            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                                .join("templates")
-                                .join("examples")
-                                .join(id)
-                                .join("src")
-                                .join("lib.rs");
-                            if path.exists() {
-                                Some(fs::read_to_string(&path).with_context(|| {
-                                    format!(
-                                        "Failed to read built-in template at {}",
-                                        path.display()
-                                    )
-                                })?)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    }
-                    "local" => {
-                        if let Some(path_val) = obj.get("path").and_then(|v| v.as_str()) {
-                            let lib_rs = Path::new(path_val).join("src").join("lib.rs");
-                            if lib_rs.exists() {
-                                Some(fs::read_to_string(&lib_rs).with_context(|| {
-                                    format!(
-                                        "Failed to read template source at {}",
-                                        lib_rs.display()
-                                    )
-                                })?)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-
-    Ok(content)
-}
-
 pub fn add_template(entry: TemplateEntry) -> Result<()> {
     let mut registry = load_registry()?;
 
-    if let Some(existing) = registry
-        .templates
-        .iter_mut()
-        .find(|t| t.name == entry.name && t.version == entry.version)
-    {
-pub fn add_template(entry: TemplateEntry) -> Result<()> {
-    let mut registry = load_registry()?;
-    
     // Check if template already exists
     if let Some(existing) = registry.templates.iter_mut().find(|t| t.name == entry.name) {
         // Update existing template
@@ -611,7 +541,7 @@ pub fn add_template(entry: TemplateEntry) -> Result<()> {
         // Add new template
         registry.templates.push(entry);
     }
-    
+
     save_registry(&registry)?;
     Ok(())
 }
@@ -633,72 +563,42 @@ pub fn update_template(name: &str) -> Result<()> {
     let entry = get_template(name)?;
 
     match &entry.source {
-        serde_json::Value::Object(obj) => {
-            if let Some(type_val) = obj.get("type").and_then(|v| v.as_str()) {
-                match type_val {
-                    "git" => {
-                        if let Some(url) = obj.get("url").and_then(|v| v.as_str()) {
-                            let branch = obj.get("branch").and_then(|v| v.as_str());
-                            let dest = std::env::temp_dir().join(&entry.name);
-                            if dest.exists() {
-                                fs::remove_dir_all(&dest).ok();
-                            }
-                            fetch_git_template(url, branch, &dest)?;
-                        }
-                    }
-                    _ => anyhow::bail!(
-                        "Template source type '{}' does not support updates",
-                        type_val
-                    ),
-                }
+        TemplateSource::Git { url, branch } => {
+            let dest = std::env::temp_dir().join(&entry.name);
+            if dest.exists() {
+                fs::remove_dir_all(&dest).ok();
             }
+            fetch_git_template(url, branch.as_deref(), &dest)?;
+            Ok(())
         }
-        _ => {}
+        other => anyhow::bail!("Template source '{}' does not support updates", other),
     }
-
-    Ok(())
 }
 
-#[allow(dead_code)]
+/// Fetch a template's files into `dest` according to its source type.
 pub fn fetch_template(entry: &TemplateEntry, dest: &Path) -> Result<()> {
     match &entry.source {
-        serde_json::Value::Object(obj) => {
-            if let Some(type_val) = obj.get("type").and_then(|v| v.as_str()) {
-                match type_val {
-                    "git" => {
-                        let url = obj
-                            .get("url")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| anyhow::anyhow!("Git URL not found"))?;
-                        let branch = obj.get("branch").and_then(|v| v.as_str());
-                        fetch_git_template(url, branch, dest)
-                    }
-                    "local" => {
-                        let path = obj
-                            .get("path")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| anyhow::anyhow!("Local path not found"))?;
-                        fetch_local_template(Path::new(path), dest)
-                    }
-                    "builtin" => {
-                        anyhow::bail!("Built-in template should be handled separately")
-                    }
-                    _ => anyhow::bail!("Unknown template source type"),
-                }
-            } else {
-                anyhow::bail!("Template source type not specified")
-            }
-        }
-        _ => anyhow::bail!("Invalid template source"),
-pub fn fetch_template(entry: &TemplateEntry, dest: &Path) -> Result<()> {
-    let source = &entry.source;
-    if source.starts_with("http://") || source.starts_with("https://") || source.starts_with("git@") {
-        fetch_git_template(source, None, dest)
-    } else if !source.is_empty() {
-        fetch_local_template(Path::new(source), dest)
-    } else {
-        anyhow::bail!("Template '{}' has no source configured", entry.name)
+        TemplateSource::Git { url, branch } => fetch_git_template(url, branch.as_deref(), dest),
+        TemplateSource::Local { path } => fetch_local_template(Path::new(path), dest),
+        TemplateSource::Builtin { id } => fetch_builtin_template(id, dest),
     }
+}
+
+/// Copy a built-in example template (shipped under `templates/examples/<id>`)
+/// into `dest`.
+fn fetch_builtin_template(id: &str, dest: &Path) -> Result<()> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("templates")
+        .join("examples")
+        .join(id);
+    if !src.exists() {
+        anyhow::bail!(
+            "Built-in template '{}' was not found at {}",
+            id,
+            src.display()
+        );
+    }
+    fetch_local_template(&src, dest)
 }
 
 fn fetch_git_template(url: &str, branch: Option<&str>, dest: &Path) -> Result<()> {
@@ -796,7 +696,9 @@ pub fn publish_template(
         description,
         author,
         tags,
-        source: dest.to_string_lossy().to_string(),
+        source: TemplateSource::Local {
+            path: dest.to_string_lossy().to_string(),
+        },
         path: Some(dest.to_string_lossy().to_string()),
         downloads: 0,
         verified: false,
@@ -844,7 +746,10 @@ mod tests {
             description: "Uniswap V2 DEX implementation".to_string(),
             author: "DeFi Team".to_string(),
             tags: vec!["defi".to_string(), "dex".to_string(), "amm".to_string()],
-            source: "https://github.com/example/uniswap-v2.git".to_string(),
+            source: TemplateSource::Git {
+                url: "https://github.com/example/uniswap-v2.git".to_string(),
+                branch: None,
+            },
             path: None,
             created_at: "2025-01-01T00:00:00Z".to_string(),
             updated_at: "2025-01-01T00:00:00Z".to_string(),
@@ -877,7 +782,10 @@ mod tests {
 
         let entry = TemplateEntry {
             name: "my-template".to_string(),
-            source: "https://example.com/repo.git".to_string(),
+            source: TemplateSource::Git {
+                url: "https://example.com/repo.git".to_string(),
+                branch: None,
+            },
             description: String::new(),
             version: "1.0.0".to_string(),
             tags: vec![],
@@ -922,7 +830,9 @@ mod tests {
             description: String::new(),
             author: String::new(),
             tags: vec![],
-            source: String::new(),
+            source: TemplateSource::Builtin {
+                id: "sample".to_string(),
+            },
             path: None,
             created_at: String::new(),
             updated_at: String::new(),

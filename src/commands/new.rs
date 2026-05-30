@@ -81,7 +81,7 @@ fn search_templates(query: &str) -> Result<()> {
     for (i, entry) in results.iter().enumerate() {
         println!("  {:>2}. {}@{}", i + 1, entry.name, entry.version);
         p::kv("Description", &entry.description);
-        p::kv("Source", &entry.source);
+        p::kv("Source", &entry.source.to_string());
         if !entry.tags.is_empty() {
             p::kv("Tags", &entry.tags.join(", "));
         }
@@ -269,15 +269,10 @@ fn scaffold_dapp(name: String) -> Result<()> {
 
     p::step(3, 3, "Writing app scaffold…");
     fs::write(dir.join("index.html"), dapp_index(&name))?;
-    fs::write(dir.join("src/main.jsx"), dapp_main(typescript, wallet_kit))?;
+    fs::write(dir.join("src/main.jsx"), dapp_main())?;
     fs::write(dir.join("src/App.jsx"), dapp_app(&name))?;
     fs::write(dir.join(".gitignore"), "node_modules/\ndist/\n")?;
     fs::write(dir.join("README.md"), dapp_readme(&name))?;
-    fs::write(dir.join("index.html"),     dapp_index(&name))?;
-    fs::write(dir.join("src/main.jsx"),   dapp_main())?;
-    fs::write(dir.join("src/App.jsx"),    dapp_app(&name))?;
-    fs::write(dir.join(".gitignore"),     "node_modules/\ndist/\n")?;
-    fs::write(dir.join("README.md"),      dapp_readme(&name))?;
 
     println!();
     p::success(&format!("dApp '{}' scaffolded!", name));
@@ -760,24 +755,6 @@ mod test {{
 
 // ── dApp scaffold files ───────────────────────────────────────────────────────
 
-fn dapp_package(name: &str, typescript: bool, wallet_kit: bool) -> String {
-    let env_block = if wallet_kit {
-        "    \"VITE_NETWORK\": \"testnet\"\n"
-    } else {
-        "    \"VITE_NETWORK\": \"testnet\"\n"
-    };
-    let wallet_deps = if wallet_kit {
-        "\n    \"@creit.tech/stellar-wallets-kit\": \"^0.1.0\","
-    } else {
-        ""
-    };
-    let ts_deps = if typescript {
-        ",\n    \"typescript\": \"^5.0.0\""
-    } else {
-        ""
-    };
-    format!(
-        r#"{{
 fn dapp_package(name: &str) -> String {
     format!(r#"{{
   "name": "{name}",
@@ -833,16 +810,6 @@ fn dapp_vite_env_types(wallet_kit: bool) -> String {
     }
 }
 
-fn dapp_main(typescript: bool, wallet_kit: bool) -> String {
-    let app_import = if typescript { "./App.tsx" } else { "./App.jsx" };
-    let root_el = if typescript {
-        "document.getElementById('root')!"
-    } else {
-        "document.getElementById('root')"
-    };
-
-    let mut out = format!(
-        r#"import React from 'react'
 fn dapp_main() -> &'static str {
     r#"import React from 'react'
 import ReactDOM from 'react-dom/client'

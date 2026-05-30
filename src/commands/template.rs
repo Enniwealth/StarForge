@@ -118,7 +118,7 @@ fn publish(
     p::success("Template registered successfully");
     p::kv_accent("Name", &template.name);
     p::kv("Version", &template.version);
-    p::kv("Source", &template.source);
+    p::kv("Source", &template.source.to_string());
     if !template.tags.is_empty() {
         p::kv("Tags", &template.tags.join(", "));
     }
@@ -153,7 +153,7 @@ fn list() -> Result<()> {
             badge_suffix
         );
         p::kv("Description", &template.description);
-        p::kv("Source", &template.source);
+        p::kv("Source", &template.source.to_string());
         if !template.tags.is_empty() {
             p::kv("Tags", &template.tags.join(", "));
         }
@@ -257,7 +257,7 @@ fn search(
                 &format!("{} (relevance {})", result.reasons.join(", "), result.relevance),
             );
         }
-        p::kv("Source", &template.source);
+        p::kv("Source", &template.source.to_string());
         if i + 1 < results.len() {
             println!();
         }
@@ -271,7 +271,7 @@ fn show(name: String) -> Result<()> {
     p::header(&format!("Template: {}", template.name));
     p::kv("Version", &template.version);
     p::kv("Description", &template.description);
-    p::kv("Source", &template.source);
+    p::kv("Source", &template.source.to_string());
     if !template.author.is_empty() {
         p::kv("Author", &template.author);
     }
