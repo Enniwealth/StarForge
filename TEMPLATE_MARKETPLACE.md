@@ -23,6 +23,36 @@ starforge template list
 starforge template show uniswap-v2
 ```
 
+#### Relevance ranking, filters and explanations
+
+Search ranks results by **text relevance** first (name matches outweigh tag
+matches, which outweigh description matches), then by quality score, then by
+downloads. Each result explains *why* it matched so the list is easy to scan.
+
+```bash
+# Rank by relevance to the query
+starforge template search token
+
+# Require specific tags (a template must have all of them)
+starforge template search "" --tags defi,dex
+
+# Only verified templates
+starforge template search wallet --verified
+
+# Only high-quality templates (score 0-100)
+starforge template search defi --min-quality 70
+
+# List everything ranked by quality (empty query)
+starforge template search
+```
+
+Each result shows the matched fields and a relevance value, e.g.:
+
+```
+   1. uniswap-v2@1.0.0  [quality 92/100]  ✓ Verified  📖 Documented  ★ Popular (1240 downloads)
+      Matched: name, tag: defi (relevance 70)
+```
+
 ### 2. Template Usage
 Scaffold new projects using marketplace templates:
 

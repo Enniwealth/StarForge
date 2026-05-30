@@ -348,41 +348,140 @@ fn fetch_and_cache_remote(url: &str) -> Result<TemplateRegistry> {
     Ok(registry)
 }
 
-pub fn search_templates(query: &str, tags: Option<&[String]>) -> Result<Vec<TemplateEntry>> {
+/// Filters applied on top of a text query when searching the marketplace.
+#[derive(Debug, Clone, Default)]
+pub struct SearchFilters {
+    /// Templates must carry all of these tags (case-insensitive).
+    pub tags: Vec<String>,
+    /// Only include templates flagged as verified.
+    pub verified_only: bool,
+    /// Only include templates whose quality score is at least this value.
+    pub min_quality: u8,
+}
+
+/// A single ranked search result, carrying the matched template alongside the
+/// information needed to explain *why* it matched and *how* it ranked.
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub entry: TemplateEntry,
+    /// Text-relevance score for the query (0 when the query is empty).
+    pub relevance: u32,
+    /// Human-readable reasons the template matched the query.
+    pub reasons: Vec<String>,
+}
+
+/// Compute the text-relevance of a template for a query, returning the score
+/// and the reasons it matched. Field weighting (name > tags > description)
+/// makes the most meaningful matches rank highest.
+fn relevance_for(entry: &TemplateEntry, query_lower: &str) -> (u32, Vec<String>) {
+    if query_lower.is_empty() {
+        return (0, Vec::new());
+    }
+
+    let mut score = 0u32;
+    let mut reasons = Vec::new();
+
+    let name_lower = entry.name.to_lowercase();
+    if name_lower == query_lower {
+        score += 100;
+        reasons.push("exact name".to_string());
+    } else if name_lower.starts_with(query_lower) {
+        score += 60;
+        reasons.push("name prefix".to_string());
+    } else if name_lower.contains(query_lower) {
+        score += 40;
+        reasons.push("name".to_string());
+    }
+
+    for tag in &entry.tags {
+        let tag_lower = tag.to_lowercase();
+        if tag_lower == query_lower {
+            score += 30;
+            reasons.push(format!("tag: {}", tag));
+        } else if tag_lower.contains(query_lower) {
+            score += 15;
+            reasons.push(format!("tag ~ {}", tag));
+        }
+    }
+
+    if entry.description.to_lowercase().contains(query_lower) {
+        score += 10;
+        reasons.push("description".to_string());
+    }
+
+    (score, reasons)
+}
+
+/// Search the marketplace with relevance ranking, filtering and per-result
+/// match explanations.
+///
+/// Results are ordered by text relevance first, then by overall quality score
+/// (verification, documentation, usage, maintenance), then by raw downloads.
+/// An empty query lists every template that satisfies the filters, ranked by
+/// quality alone.
+pub fn search_templates_ranked(
+    query: &str,
+    filters: &SearchFilters,
+) -> Result<Vec<SearchResult>> {
     let registry = load_registry()?;
-    let query_lower = query.to_lowercase();
-    
-    let mut results: Vec<TemplateEntry> = registry
+    let query_lower = query.trim().to_lowercase();
+
+    let mut results: Vec<SearchResult> = registry
         .templates
         .into_iter()
-        .filter(|t| {
-            let name_match = t.name.to_lowercase().contains(&query_lower);
-            let desc_match = t.description.to_lowercase().contains(&query_lower);
-            let tag_match = t.tags.iter().any(|tag| tag.to_lowercase().contains(&query_lower));
-            
-            let text_match = name_match || desc_match || tag_match;
-            
-            if let Some(filter_tags) = tags {
-                let has_all_tags = filter_tags.iter().all(|ft| {
-                    t.tags.iter().any(|t| t.eq_ignore_ascii_case(ft))
-                });
-                text_match && has_all_tags
-            } else {
-                text_match
+        .filter_map(|entry| {
+            // Apply structured filters first — they are independent of the text query.
+            let has_all_tags = filters
+                .tags
+                .iter()
+                .all(|ft| entry.tags.iter().any(|t| t.eq_ignore_ascii_case(ft)));
+            if !has_all_tags {
+                return None;
             }
+            if filters.verified_only && !entry.verified {
+                return None;
+            }
+            if entry.quality_score() < filters.min_quality {
+                return None;
+            }
+
+            let (relevance, reasons) = relevance_for(&entry, &query_lower);
+            // When a text query is supplied, drop templates that do not match it.
+            if !query_lower.is_empty() && relevance == 0 {
+                return None;
+            }
+
+            Some(SearchResult {
+                entry,
+                relevance,
+                reasons,
+            })
         })
         .collect();
-    
-    // Rank by overall quality score (verification, documentation, usage and
-    // maintenance), falling back to raw downloads to break ties. This surfaces
-    // trusted, well-documented and well-maintained templates more clearly.
+
+    // Rank by relevance, then quality, then downloads. This keeps the most
+    // pertinent matches at the top while still favouring trusted, well-
+    // documented and well-maintained templates.
     results.sort_by(|a, b| {
-        b.quality_score()
-            .cmp(&a.quality_score())
-            .then_with(|| b.downloads.cmp(&a.downloads))
+        b.relevance
+            .cmp(&a.relevance)
+            .then_with(|| b.entry.quality_score().cmp(&a.entry.quality_score()))
+            .then_with(|| b.entry.downloads.cmp(&a.entry.downloads))
     });
-    
+
     Ok(results)
+}
+
+/// Backwards-compatible search returning just the ranked template entries.
+pub fn search_templates(query: &str, tags: Option<&[String]>) -> Result<Vec<TemplateEntry>> {
+    let filters = SearchFilters {
+        tags: tags.map(|t| t.to_vec()).unwrap_or_default(),
+        ..Default::default()
+    };
+    Ok(search_templates_ranked(query, &filters)?
+        .into_iter()
+        .map(|r| r.entry)
+        .collect())
 }
 
 pub fn get_template(name: &str) -> Result<TemplateEntry> {
@@ -877,6 +976,48 @@ mod tests {
         assert!(badges.iter().any(|b| b.contains("Documented")));
         assert!(badges.iter().any(|b| b.contains("Deprecated")));
         assert!(badges.iter().any(|b| b.contains("Popular")));
+    }
+
+    #[test]
+    fn relevance_weights_name_above_description() {
+        let mut entry = sample_entry();
+        entry.name = "uniswap-v2".to_string();
+        entry.description = "an amm dex".to_string();
+        entry.tags = vec!["defi".to_string()];
+
+        let (name_score, name_reasons) = relevance_for(&entry, "uniswap");
+        let (desc_score, _) = relevance_for(&entry, "amm");
+        assert!(name_score > desc_score);
+        assert!(name_reasons.iter().any(|r| r.contains("name")));
+    }
+
+    #[test]
+    fn relevance_exact_name_beats_prefix() {
+        let mut exact = sample_entry();
+        exact.name = "token".to_string();
+        let mut prefix = sample_entry();
+        prefix.name = "token-allowlist".to_string();
+
+        let (exact_score, _) = relevance_for(&exact, "token");
+        let (prefix_score, _) = relevance_for(&prefix, "token");
+        assert!(exact_score > prefix_score);
+    }
+
+    #[test]
+    fn relevance_empty_query_scores_zero() {
+        let entry = sample_entry();
+        let (score, reasons) = relevance_for(&entry, "");
+        assert_eq!(score, 0);
+        assert!(reasons.is_empty());
+    }
+
+    #[test]
+    fn relevance_tag_match_is_reported() {
+        let mut entry = sample_entry();
+        entry.tags = vec!["defi".to_string(), "dex".to_string()];
+        let (score, reasons) = relevance_for(&entry, "defi");
+        assert!(score > 0);
+        assert!(reasons.iter().any(|r| r == "tag: defi"));
     }
 
     #[test]

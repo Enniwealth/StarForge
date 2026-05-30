@@ -10,11 +10,18 @@ use colored::Colorize;
 pub enum TemplateCommands {
     /// Search for templates in the marketplace
     Search {
-        /// Search query (matches name, description, or tags)
+        /// Search query (matches name, description, or tags). Use "" to list all.
+        #[arg(default_value = "")]
         query: String,
-        /// Filter by tags (comma-separated)
+        /// Filter by tags (comma-separated); a template must have all of them
         #[arg(long)]
         tags: Option<String>,
+        /// Only show verified templates
+        #[arg(long)]
+        verified: bool,
+        /// Only show templates with at least this quality score (0-100)
+        #[arg(long, default_value_t = 0)]
+        min_quality: u8,
         /// Force refresh of remote registry, ignoring cached copy
         #[arg(long)]
         refresh: bool,
@@ -61,7 +68,9 @@ pub fn handle(cmd: TemplateCommands) -> Result<()> {
             publish(path, name, description, author, tags, version)
         }
         TemplateCommands::List => list(),
-        TemplateCommands::Search { query, tags, refresh } => search(query, tags, refresh),
+        TemplateCommands::Search { query, tags, verified, min_quality, refresh } => {
+            search(query, tags, verified, min_quality, refresh)
+        }
         TemplateCommands::Show { name } => show(name),
         TemplateCommands::Remove { name } => remove(name),
         TemplateCommands::Init => init(),
@@ -159,33 +168,68 @@ fn list() -> Result<()> {
     Ok(())
 }
 
-fn search(query: String, tags: Option<String>, refresh: bool) -> Result<()> {
-    // Determine tags filter if provided (comma-separated)
-    let tag_vec: Option<Vec<String>> = tags.as_ref().map(|t| t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
+fn search(
+    query: String,
+    tags: Option<String>,
+    verified: bool,
+    min_quality: u8,
+    refresh: bool,
+) -> Result<()> {
+    let tag_list: Vec<String> = tags
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
-    // Load registry, optionally forcing a refresh
+    let filters = templates::SearchFilters {
+        tags: tag_list,
+        verified_only: verified,
+        min_quality,
+    };
+
+    // Load registry, optionally forcing a refresh of the remote copy.
     let results = if refresh {
-        // Temporarily set env var to force refresh
         std::env::set_var("STARFORGE_TEMPLATE_REGISTRY_FORCE_REFRESH", "1");
-        let res = templates::search_templates(&query, tag_vec.as_ref().map(|v| &v[..]));
+        let res = templates::search_templates_ranked(&query, &filters);
         std::env::remove_var("STARFORGE_TEMPLATE_REGISTRY_FORCE_REFRESH");
         res?
     } else {
-        templates::search_templates(&query, tag_vec.as_ref().map(|v| &v[..]))?
+        templates::search_templates_ranked(&query, &filters)?
     };
 
-fn search(query: String, tags: Option<String>) -> Result<()> {
-    let tag_list: Option<Vec<String>> = tags.map(|t| {
-        t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
-    });
-    let results = templates::search_templates(&query, tag_list.as_deref())?;
-    p::header(&format!("Template search results for '{}'", query));
+    let heading = if query.trim().is_empty() {
+        "Template search results".to_string()
+    } else {
+        format!("Template search results for '{}'", query)
+    };
+    p::header(&heading);
+
+    // Summarize the active filters so users understand the result set.
+    let mut active_filters = Vec::new();
+    if !filters.tags.is_empty() {
+        active_filters.push(format!("tags: {}", filters.tags.join(", ")));
+    }
+    if filters.verified_only {
+        active_filters.push("verified only".to_string());
+    }
+    if filters.min_quality > 0 {
+        active_filters.push(format!("min quality: {}", filters.min_quality));
+    }
+    if !active_filters.is_empty() {
+        p::kv("Filters", &active_filters.join("  |  "));
+    }
+
     if results.is_empty() {
-        p::info("No templates matched that query.");
+        p::info("No templates matched. Try a broader query or relaxing the filters.");
         return Ok(());
     }
 
-    for (i, template) in results.iter().enumerate() {
+    p::kv("Matches", &results.len().to_string());
+    println!();
+
+    for (i, result) in results.iter().enumerate() {
+        let template = &result.entry;
         let badges = template.trust_indicators();
         let badge_suffix = if badges.is_empty() {
             String::new()
@@ -203,10 +247,17 @@ fn search(query: String, tags: Option<String>) -> Result<()> {
         p::kv("Description", &template.description);
         p::kv("Downloads", &template.downloads.to_string());
         p::kv("Maintenance", template.maintenance.label());
-        p::kv("Source", &template.source);
         if !template.tags.is_empty() {
             p::kv("Tags", &template.tags.join(", "));
         }
+        // Explain why this result matched, helping users scan the list.
+        if !result.reasons.is_empty() {
+            p::kv(
+                "Matched",
+                &format!("{} (relevance {})", result.reasons.join(", "), result.relevance),
+            );
+        }
+        p::kv("Source", &template.source);
         if i + 1 < results.len() {
             println!();
         }
