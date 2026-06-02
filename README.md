@@ -149,6 +149,27 @@ starforge network test
 starforge network test mainnet
 ```
 
+### Configuration commands
+
+```bash
+# Show all configuration settings
+starforge config show
+
+# Get a specific setting
+starforge config get telemetry
+starforge config get network
+
+# Set a configuration value
+starforge config set telemetry false
+starforge config set network mainnet
+```
+
+Common settings:
+- **telemetry**: Enable/disable anonymous usage telemetry (`true` or `false`)
+- **network**: Set the default network (`testnet`, `mainnet`, or custom network name)
+
+For privacy information, see [Telemetry & Privacy](#telemetry--privacy).
+
 ### Scaffold commands
 
 ```bash
@@ -281,6 +302,40 @@ starforge/
 
 ---
 
+## Privacy & Telemetry
+
+StarForge values your privacy.
+
+### Local-Only Telemetry Guarantee
+To help improve CLI usability, starforge collects anonymous usage telemetry (such as command names and execution times). This telemetry data is **stored purely locally** at `~/.starforge/data/telemetry.log`. **No network requests are ever made** for telemetry transmission; your telemetry data never leaves your machine.
+
+### Explicit Opt-Out Methods
+You can easily disable telemetry at any time using one of three methods:
+
+1. **Config Command:**
+   ```bash
+   starforge config set telemetry.enabled false
+   ```
+
+2. **Telemetry Subcommand:**
+   ```bash
+   starforge telemetry disable
+   ```
+
+3. **Environment Variable:**
+   Set the `STARFORGE_TELEMETRY` environment variable to `false` or `0` in your shell profile:
+   ```bash
+   export STARFORGE_TELEMETRY=false
+   ```
+
+To inspect your current telemetry status:
+```bash
+starforge telemetry status
+```
+
+---
+
+
 ## Configuration
 
 starforge stores all data in `~/.starforge/config.toml`:
@@ -335,9 +390,29 @@ cargo test
 
 Generate this value outside the codebase using your preferred secure workflow, such as a local Stellar key generation command or an existing throwaway test wallet. The key should live only in your shell environment or secret manager, not in source control.
 
----
+### Telemetry & Privacy
 
-## Contract Templates
+starforge collects **anonymous telemetry** to help us improve the CLI. **No personal data is collected** — only command names, success/failure status, and execution time.
+
+#### Disable Telemetry
+
+If you prefer not to participate:
+
+```bash
+# Permanently disable telemetry
+starforge config set telemetry false
+
+# Or use an environment variable (useful for CI/CD)
+export STARFORGE_TELEMETRY=0
+```
+
+**What's collected**: Command name, timestamp, success status, duration (milliseconds), and a random anonymous ID.
+
+**What's NOT collected**: Wallet addresses, secret keys, contract code, configuration values, error messages, or personal information.
+
+For detailed information, see [TELEMETRY_PRIVACY.md](./TELEMETRY_PRIVACY.md).
+
+---
 
 | Template | Description |
 |----------|-------------|
@@ -352,18 +427,35 @@ All templates include a working test suite and a README with build/deploy instru
 
 ## Contributing
 
+We welcome contributions from developers of all experience levels! Whether you're fixing a bug, adding a feature, or improving documentation, your work helps the Stellar ecosystem.
+
+**New contributor?** Start here: [CONTRIBUTING.md](CONTRIBUTING.md) has everything you need to get set up and submit your first PR.
+
+**Need a quick reference?** Check out [CONTRIBUTOR_QUICK_REFERENCE.md](CONTRIBUTOR_QUICK_REFERENCE.md) for common commands and patterns.
+
+### Key Contribution Resources
+
+| Resource | What it covers |
+|----------|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | **Full contributor guide** — setup, building, testing, PR process |
+| [CONTRIBUTOR_QUICK_REFERENCE.md](CONTRIBUTOR_QUICK_REFERENCE.md) | **Quick lookup** — common commands, project structure, troubleshooting |
+| [CI_ENFORCEMENT.md](CI_ENFORCEMENT.md) | **CI pipeline** — formatting, linting, security, and test requirements |
+| [CODE_STYLE_STANDARDS.md](CODE_STYLE_STANDARDS.md) | **Code style** — naming, documentation, linting rules, IDE setup |
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | **Deep dive** — architecture, adding features, release process |
+
+### Quick Start
+
+1. Fork and clone the repository
+2. Follow [CONTRIBUTING.md](CONTRIBUTING.md) to set up Rust and the project
+3. Create a branch: `git checkout -b feat/issue-XXX-description`
+4. Make your changes and run `cargo test`
+5. Push and open a Pull Request with a clear description
+
+### Rewards
+
 This project participates in the **[Stellar Wave Program](https://www.drips.network/wave/stellar)** on Drips. Contributors who resolve issues during an active Wave earn Points that translate to real USDC rewards.
 
 **Read the [Terms & Rules](https://docs.drips.network/wave/terms-and-rules) before contributing.**
-
-### How to contribute
-
-1. Fork the repository
-2. Create a branch: `git checkout -b feat/your-feature`
-3. Make your changes and commit: `git commit -m "feat: description"`
-4. Push and open a Pull Request against `main`
-
-Please keep PRs scoped to a single issue and include a clear description of what changed and why.
 
 ---
 ## License

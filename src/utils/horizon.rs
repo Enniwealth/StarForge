@@ -566,6 +566,7 @@ mod tests {
                 networks,
                 wallets: Vec::new(),
                 telemetry_enabled: Some(false),
+                wallet_encryption: None,
             })
             .expect("save config");
 

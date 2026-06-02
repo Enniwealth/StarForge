@@ -1,7 +1,7 @@
 use crate::plugins::interface::CORE_VERSION;
 use crate::plugins::manifest;
-use crate::plugins::registry::{self, TrustLevel, UninstallOptions};
-use crate::plugins::PluginManager;
+use crate::plugins::registry::{self, RegisteredCommand, TrustLevel, UninstallOptions};
+use crate::plugins::{PluginLoadError, PluginManager};
 use crate::utils::print as p;
 use anyhow::{Context, Result};
 use clap::Subcommand;
@@ -77,6 +77,11 @@ pub enum PluginCommands {
         #[arg(long, default_value = "false")]
         yes: bool,
     },
+    /// List commands registered by installed plugins
+    Commands {
+        /// Show commands for a specific plugin only
+        name: Option<String>,
+    },
 }
 
 pub fn handle(cmd: PluginCommands) -> Result<()> {
@@ -100,6 +105,7 @@ pub fn handle(cmd: PluginCommands) -> Result<()> {
             runtime_check,
         } => audit(name, runtime_check),
         PluginCommands::Update { name, yes } => update(name, yes),
+        PluginCommands::Commands { name } => commands(name),
     }
 }
 
@@ -127,12 +133,29 @@ fn install(name: String, path: Option<PathBuf>, source: Option<String>, force: b
 
     let plugin_manifest = manifest::require_compatible_manifest(&lib_path, &name)?;
 
+    // Load the plugin to discover the commands it registers.
+    let discovered_commands: Vec<RegisteredCommand> = {
+        let mut pm = PluginManager::new();
+        unsafe {
+            pm.load_plugin(&lib_path)
+                .with_context(|| format!("Failed to load plugin '{}' to discover commands", name))?;
+        }
+        pm.list_commands()
+            .into_iter()
+            .map(|c| RegisteredCommand {
+                name: c.name,
+                description: c.description,
+            })
+            .collect()
+    };
+
     registry::install_plugin(
         &name,
         &lib_path,
         source_str,
         &plugin_manifest.starforge_version,
         &plugin_manifest.version,
+        discovered_commands.clone(),
     )?;
 
     p::header("Plugin Install");
@@ -144,6 +167,12 @@ fn install(name: String, path: Option<PathBuf>, source: Option<String>, force: b
     p::kv("Trust", trust.label());
     if !source_str.is_empty() {
         p::kv("Source", source_str);
+    }
+    if !discovered_commands.is_empty() {
+        p::info("Registered commands:");
+        for cmd in &discovered_commands {
+            p::info(&format!("  • {}  — {}", cmd.name, cmd.description));
+        }
     }
     p::info("Load plugins with: starforge plugin load");
     Ok(())
@@ -199,26 +228,54 @@ fn load() -> Result<()> {
     }
 
     let mut pm = PluginManager::new();
+    let mut failed: Vec<(String, PluginLoadError)> = Vec::new();
+
     for pl in &reg.plugins {
-        unsafe {
-            pm.load_plugin(&pl.path)
-                .with_context(|| format!("Failed to load plugin '{}' from {}", pl.name, pl.path))?;
+        match unsafe { pm.load_plugin_diagnosed(&pl.path) } {
+            Ok(()) => {}
+            Err(e) => failed.push((pl.name.clone(), e)),
         }
     }
 
+    // ── Report failures with structured diagnostics ──────────────────────────
+    if !failed.is_empty() {
+        p::warn(&format!(
+            "{} plugin(s) failed to load:",
+            failed.len()
+        ));
+        for (name, err) in &failed {
+            println!();
+            p::error(&format!("[{}] {}", err.category(), name));
+            for line in err.diagnostic().lines() {
+                println!("  {}", line);
+            }
+        }
+        println!();
+    }
+
     let loaded = pm.list_plugins();
-    if loaded.is_empty() {
+    if loaded.is_empty() && failed.is_empty() {
         p::warn("No plugins loaded.");
         return Ok(());
     }
 
-    p::kv("StarForge core version", CORE_VERSION);
-    p::separator();
-    for (name, desc, built_for) in loaded {
-        p::kv_accent(name, desc);
-        p::kv("Built for StarForge", built_for);
+    if !loaded.is_empty() {
+        p::kv("StarForge core version", CORE_VERSION);
+        p::separator();
+        for (name, desc, built_for) in loaded {
+            p::kv_accent(name, desc);
+            p::kv("Built for StarForge", built_for);
+        }
+        p::separator();
     }
-    p::separator();
+
+    if !failed.is_empty() {
+        anyhow::bail!(
+            "{} plugin(s) failed to load. See diagnostics above.",
+            failed.len()
+        );
+    }
+
     Ok(())
 }
 

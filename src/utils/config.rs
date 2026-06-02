@@ -1,3 +1,4 @@
+use crate::utils::crypto;
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -99,10 +100,13 @@ pub fn validate_network(network: &str) -> Result<()> {
 pub fn validate_secret_key(secret: &str) -> Result<()> {
     if secret.contains(':') {
         let parts: Vec<&str> = secret.split(':').collect();
-        // Accept both 3-part (legacy: salt:nonce:ciphertext) and 5-part (with KDF: salt:nonce:ciphertext:mem:iterations)
-        if parts.len() != 3 && parts.len() != 5 {
+        // Accept:
+        // - 3-part (legacy: salt:nonce:ciphertext)
+        // - 5-part (KDF without p_cost: salt:nonce:ciphertext:mem:iterations)
+        // - 6-part (KDF with p_cost: salt:nonce:ciphertext:mem:iterations:parallelism)
+        if parts.len() != 3 && parts.len() != 5 && parts.len() != 6 {
             anyhow::bail!(
-                "Invalid encrypted secret bundle format: expected 3 or 5 parts, got {}",
+                "Invalid encrypted secret bundle format: expected 3, 5, or 6 parts, got {}",
                 parts.len()
             );
         }
@@ -114,14 +118,19 @@ pub fn validate_secret_key(secret: &str) -> Result<()> {
             })?;
         }
 
-        // If 5-part bundle, validate KDF parameters are valid u32
-        if parts.len() == 5 {
+        // If 5 or 6-part bundle, validate KDF parameters are valid u32
+        if parts.len() >= 5 {
             parts[3]
                 .parse::<u32>()
                 .map_err(|_| anyhow::anyhow!("Invalid KDF memory cost: must be a valid u32"))?;
             parts[4]
                 .parse::<u32>()
                 .map_err(|_| anyhow::anyhow!("Invalid KDF iteration count: must be a valid u32"))?;
+        }
+        if parts.len() == 6 {
+            parts[5]
+                .parse::<u32>()
+                .map_err(|_| anyhow::anyhow!("Invalid KDF parallelism factor: must be a valid u32"))?;
         }
 
         return Ok(());
@@ -188,6 +197,7 @@ pub struct Config {
     #[serde(default)]
     pub networks: std::collections::HashMap<String, NetworkConfig>,
     pub telemetry_enabled: Option<bool>,
+    pub wallet_encryption: Option<crypto::KdfOptions>,
 }
 
 fn default_version() -> String {
@@ -221,6 +231,10 @@ pub struct WalletRotationRecord {
     pub previous_public_key: String,
     pub previous_network: String,
     pub previous_funded: bool,
+    /// The previous secret key (plaintext or encrypted bundle), preserved when
+    /// `--backup` is passed to `wallet rotate`.  `None` when not requested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_secret_key: Option<String>,
 }
 
 impl Default for Config {
@@ -260,6 +274,7 @@ impl Default for Config {
             wallets: vec![],
             networks,
             telemetry_enabled: Some(true),
+            wallet_encryption: None,
         }
     }
 }
@@ -352,6 +367,10 @@ pub fn get_data_dir() -> Result<PathBuf> {
         fs::create_dir_all(&dir)?;
     }
     Ok(dir)
+}
+
+pub fn get_config_path() -> Result<PathBuf> {
+    Ok(config_path())
 }
 
 pub fn config_path() -> PathBuf {
@@ -476,6 +495,14 @@ mod tests {
         let cipher = BASE64.encode([2u8; 32]);
         let bundle = format!("{}:{}:{}", salt, nonce, cipher);
         assert!(validate_secret_key(&bundle).is_ok());
+
+        // 5-part
+        let bundle_5 = format!("{}:{}:{}:32768:4", salt, nonce, cipher);
+        assert!(validate_secret_key(&bundle_5).is_ok());
+
+        // 6-part
+        let bundle_6 = format!("{}:{}:{}:32768:4:2", salt, nonce, cipher);
+        assert!(validate_secret_key(&bundle_6).is_ok());
     }
 
     #[test]
