@@ -14,9 +14,13 @@ pub struct TelemetryData {
 }
 
 pub fn track_event(event: &str, properties: serde_json::Value) -> Result<()> {
-    // Check environment variable first (opt out if false or 0)
-    if let Ok(val) = std::env::var("STARFORGE_TELEMETRY") {
-        if val == "false" || val == "0" {
+    // Check environment variable first (for CI/automation that cannot modify config)
+    if let Ok(env_val) = std::env::var("STARFORGE_TELEMETRY") {
+        let disabled = matches!(
+            env_val.to_lowercase().as_str(),
+            "0" | "false" | "off" | "disabled" | "no"
+        );
+        if disabled {
             return Ok(());
         }
     }
