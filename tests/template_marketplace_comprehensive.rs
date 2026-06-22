@@ -694,7 +694,7 @@ pub struct {{PROJECT_NAME_PASCAL}} {
 
     #[test]
     fn test_installation_steps_order() {
-        let steps = vec!["Fetching template", "Validating structure", "Installing"];
+        let steps = ["Fetching template", "Validating structure", "Installing"];
 
         assert_eq!(steps[0], "Fetching template");
         assert_eq!(steps[1], "Validating structure");
@@ -728,7 +728,7 @@ pub struct {{PROJECT_NAME_PASCAL}} {
 
     #[test]
     fn test_search_with_special_characters_in_query() {
-        let templates = vec![TemplateEntry {
+        let templates = [TemplateEntry {
             name: "c++-template".to_string(),
             version: "1.0.0".to_string(),
             description: "C++ style template".to_string(),
@@ -754,7 +754,7 @@ pub struct {{PROJECT_NAME_PASCAL}} {
 
     #[test]
     fn test_search_case_insensitive() {
-        let templates = vec![TemplateEntry {
+        let templates = [TemplateEntry {
             name: "UniSwap-V2".to_string(),
             version: "1.0.0".to_string(),
             description: "DEX".to_string(),
