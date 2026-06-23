@@ -1,5 +1,6 @@
 #![allow(
     dead_code,
+    clippy::needless_borrows_for_generic_args,
     clippy::needless_range_loop,
     clippy::redundant_closure,
     clippy::too_many_arguments,
