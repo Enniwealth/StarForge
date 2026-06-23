@@ -135,22 +135,15 @@ fn install(name: String, path: Option<PathBuf>, source: Option<String>, force: b
 
     let plugin_manifest = manifest::require_compatible_manifest(&lib_path, &name)?;
 
-    // Load the plugin to discover the commands it registers.
-    let discovered_commands: Vec<RegisteredCommand> = {
-        let mut pm = PluginManager::new();
-        unsafe {
-            pm.load_plugin(&lib_path).with_context(|| {
-                format!("Failed to load plugin '{}' to discover commands", name)
-            })?;
-        }
-        pm.list_commands()
-            .into_iter()
-            .map(|c| RegisteredCommand {
-                name: c.name,
-                description: c.description,
-            })
-            .collect()
-    };
+    let discovered_commands = discover_commands_from_library(lib_path.to_str().unwrap_or_default())
+        .unwrap_or_else(|e| {
+            p::warn(&format!(
+                "Could not discover commands from '{}': {}",
+                lib_path.display(),
+                e
+            ));
+            Vec::new()
+        });
 
     registry::install_plugin(
         &name,
