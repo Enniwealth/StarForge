@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports, clippy::empty_line_after_doc_comments)]
+
 /// Integration tests for wallet encryption and KDF functionality
 /// Tests the complete flow of encrypted wallet creation, rotation, and secret handling
 #[cfg(test)]

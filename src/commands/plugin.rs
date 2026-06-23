@@ -5,6 +5,7 @@ use crate::plugins::{PluginLoadError, PluginManager};
 use crate::utils::print as p;
 use anyhow::Result;
 use clap::Subcommand;
+use colored::*;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -134,24 +135,15 @@ fn install(name: String, path: Option<PathBuf>, source: Option<String>, force: b
 
     let plugin_manifest = manifest::require_compatible_manifest(&lib_path, &name)?;
 
-    // Load the plugin to discover the commands it registers.
-    let discovered_commands: Vec<RegisteredCommand> = {
-        let mut pm = PluginManager::new();
-        match unsafe { pm.load_plugin(&lib_path) } {
-            Ok(_) => pm
-                .list_commands()
-                .into_iter()
-                .map(|c| RegisteredCommand {
-                    name: c.name,
-                    description: c.description,
-                })
-                .collect(),
-            Err(_) => {
-                p::warn("Could not load plugin to discover commands - proceeding with empty command list");
-                Vec::new()
-            }
-        }
-    };
+    let discovered_commands = discover_commands_from_library(lib_path.to_str().unwrap_or_default())
+        .unwrap_or_else(|e| {
+            p::warn(&format!(
+                "Could not discover commands from '{}': {}",
+                lib_path.display(),
+                e
+            ));
+            Vec::new()
+        });
 
     registry::install_plugin(
         &name,
@@ -209,6 +201,45 @@ fn list() -> Result<()> {
             println!();
         }
     }
+    p::separator();
+    Ok(())
+}
+
+fn commands(name: Option<String>) -> Result<()> {
+    p::header("Plugin Commands");
+    let reg = registry::load_registry().unwrap_or_default();
+    if reg.plugins.is_empty() {
+        p::info("No plugins installed. Use: starforge plugin install <name> --path <lib>");
+        return Ok(());
+    }
+
+    let selected: Vec<_> = match &name {
+        Some(plugin_name) => reg
+            .plugins
+            .iter()
+            .filter(|pl| pl.name == *plugin_name)
+            .collect(),
+        None => reg.plugins.iter().collect(),
+    };
+
+    if let Some(plugin_name) = &name {
+        if selected.is_empty() {
+            anyhow::bail!("Plugin '{}' not found in registry", plugin_name);
+        }
+    }
+
+    for pl in selected {
+        println!();
+        p::info(&format!("{}:", pl.name));
+        if pl.commands.is_empty() {
+            p::warn("  No commands registered");
+            continue;
+        }
+        for cmd in &pl.commands {
+            println!("  {}  — {}", cmd.name.cyan(), cmd.description.dimmed());
+        }
+    }
+
     p::separator();
     Ok(())
 }
@@ -341,6 +372,27 @@ fn uninstall(name: String, purge: bool, yes: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn discover_commands_from_library(lib_path: &str) -> Result<Vec<RegisteredCommand>> {
+    let path = Path::new(lib_path);
+    let mut pm = PluginManager::new();
+    unsafe {
+        pm.load_plugin(path).with_context(|| {
+            format!(
+                "Failed to load plugin from '{}' to discover commands",
+                lib_path
+            )
+        })?;
+    }
+    Ok(pm
+        .list_commands()
+        .into_iter()
+        .map(|c| RegisteredCommand {
+            name: c.name,
+            description: c.description,
+        })
+        .collect())
 }
 
 fn update(name: Option<String>, yes: bool) -> Result<()> {
