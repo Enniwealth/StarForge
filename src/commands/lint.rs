@@ -127,7 +127,7 @@ fn check_integer_overflows(content: &str, path: &Path) -> Result<Vec<LintFinding
             continue;
         }
 
-        let has_arithmetic = (line.contains(" + ") || line.contains(" + "))
+        let has_arithmetic = (line.contains(" + ") || line.contains("+="))
             && (line.contains("=") || line.contains("let") || line.contains("return"));
 
         if has_arithmetic {

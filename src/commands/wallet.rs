@@ -726,7 +726,7 @@ fn show(name: String, reveal: bool) -> Result<()> {
         if let Some(sk) = &w.secret_key {
             // Check if it's plaintext
             if !sk.contains(':') && sk.starts_with('S') && sk.len() == 56 {
-                p::warn("Warning: This wallet is using an unencrypted legacy key!");
+                p::warn("Warning: This wallet's secret key is stored unencrypted (plaintext)!");
                 p::kv("Secret Key", sk);
             } else {
                 let pwd = crypto::prompt_password(
