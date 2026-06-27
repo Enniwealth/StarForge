@@ -115,6 +115,18 @@ enum Commands {
     /// Run connectivity diagnostics for attached Ledger/Trezor devices
     Diagnostics(commands::diagnostics::DiagnosticsArgs),
 
+    /// Template version control (versioning, branching, changelog)
+    #[command(subcommand)]
+    TemplateVcs(commands::template_vcs::TemplateVcsCommands),
+
+    /// Contract performance monitoring and metrics dashboard
+    #[command(subcommand)]
+    Perf(commands::perf::PerfCommands),
+
+    /// Contract documentation portal (generate, view, search)
+    #[command(subcommand)]
+    Docs(commands::docs::DocsCommands),
+
     /// Execute an installed plugin command (e.g. `starforge defi ...`)
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -158,6 +170,9 @@ fn main() {
         Commands::Upgrade(_) => "upgrade",
         Commands::Lint(_) => "lint",
         Commands::Diagnostics(_) => "diagnostics",
+        Commands::TemplateVcs(_) => "template-vcs",
+        Commands::Perf(_) => "perf",
+        Commands::Docs(_) => "docs",
         Commands::External(_) => "external",
     }
     .to_string();
@@ -187,6 +202,9 @@ fn main() {
         Commands::Upgrade(cmd) => commands::upgrade::handle(cmd),
         Commands::Lint(args) => commands::lint::handle(args),
         Commands::Diagnostics(args) => commands::diagnostics::handle(args),
+        Commands::TemplateVcs(cmd) => commands::template_vcs::handle(cmd),
+        Commands::Perf(cmd) => commands::perf::handle(cmd),
+        Commands::Docs(cmd) => commands::docs::handle(cmd),
         Commands::External(args) => handle_external_plugin(args),
     };
     let duration = start.elapsed();
