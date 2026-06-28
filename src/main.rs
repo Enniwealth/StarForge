@@ -105,9 +105,25 @@ enum Commands {
     #[command(subcommand)]
     Template(commands::template::TemplateCommands),
 
+    /// Interact with the remote template registry
+    #[command(subcommand)]
+    Registry(commands::registry::RegistryCommands),
+
+    /// Manage multi-signature transactions
+    #[command(subcommand)]
+    Multisig(commands::multisig_builder::MultisigCommands),
+
     /// Contract upgrade management (propose, approve, execute, rollback)
     #[command(subcommand)]
     Upgrade(commands::upgrade::UpgradeCommands),
+
+    /// Multi-contract deployment orchestration
+    #[command(subcommand)]
+    Orchestrate(commands::orchestrate::OrchestrateCommands),
+
+    /// Security hardening, validation, and monitoring
+    #[command(subcommand)]
+    Security(commands::security::SecurityCommands),
 
     /// Static analysis and linting for Soroban contracts
     Lint(commands::lint::LintArgs),
@@ -161,13 +177,17 @@ fn main() {
         Commands::Completions(_) => "completions",
         Commands::Shell(_) => "shell",
         Commands::Monitor(_) => "monitor",
+        Commands::Multisig(_) => "multisig",
         Commands::Tutorial(_) => "tutorial",
         Commands::Benchmark(_) => "benchmark",
         Commands::Test(_) => "test",
         Commands::Gas(_) => "gas",
         Commands::Plugin(_) => "plugin",
         Commands::Template(_) => "template",
+        Commands::Registry(_) => "registry",
         Commands::Upgrade(_) => "upgrade",
+        Commands::Orchestrate(_) => "orchestrate",
+        Commands::Security(_) => "security",
         Commands::Lint(_) => "lint",
         Commands::Diagnostics(_) => "diagnostics",
         Commands::TemplateVcs(_) => "template-vcs",
@@ -193,13 +213,17 @@ fn main() {
         Commands::Completions(shell) => commands::completions::handle(shell),
         Commands::Shell(args) => commands::shell::handle(args),
         Commands::Monitor(args) => commands::monitor::handle(args),
+        Commands::Multisig(cmd) => commands::multisig_builder::handle(cmd),
         Commands::Tutorial(cmd) => commands::tutorial::handle(cmd),
         Commands::Benchmark(args) => commands::benchmark::handle(args),
         Commands::Test(args) => commands::test::handle(args),
         Commands::Gas(args) => commands::gas::handle(args),
         Commands::Plugin(args) => commands::plugin::handle(args),
         Commands::Template(args) => commands::template::handle(args),
+        Commands::Registry(cmd) => commands::registry::handle(cmd),
         Commands::Upgrade(cmd) => commands::upgrade::handle(cmd),
+        Commands::Orchestrate(cmd) => commands::orchestrate::handle(cmd),
+        Commands::Security(cmd) => commands::security::handle(cmd),
         Commands::Lint(args) => commands::lint::handle(args),
         Commands::Diagnostics(args) => commands::diagnostics::handle(args),
         Commands::TemplateVcs(cmd) => commands::template_vcs::handle(cmd),

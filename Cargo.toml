@@ -11,6 +11,11 @@ keywords = ["stellar", "soroban", "blockchain", "cli", "web3"]
 name = "starforge"
 path = "src/main.rs"
 
+[lib]
+name = "starforge"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
 # Package-wide lint policy. These lints are intentionally relaxed for the crate
 # (including integration tests, which use lightweight mock structs and helpers).
 # Centralizing them here keeps `cargo clippy --all-targets -- -D warnings` green.
@@ -57,7 +62,7 @@ urlencoding = "2.1"
 sha2 = "0.10"
 indicatif = "0.17.7"
 libloading = "0.8.1"
-uuid = { version = "1.6.1", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4", "serde"] }
 hidapi = { version = "2.6.5", optional = true }
 trezor-client = { version = "0.1.5", default-features = false, features = ["stellar"], optional = true }
 zxcvbn = "=3.1.0"
@@ -70,6 +75,13 @@ hmac = "0.12"
 rustyline = "14.0.0"
 zip = "0.6"
 tempfile = "3.8"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+async-graphql = "0.12"
+async-graphql-actix-web = "0.12"
+tokio = { version = "1", features = ["full"] }
+actix-web = "4"
+actix-rt = "2"
 
 [features]
 hardware-wallet = ["dep:hidapi", "dep:trezor-client"]
@@ -78,6 +90,7 @@ hardware-wallet = ["dep:hidapi", "dep:trezor-client"]
 criterion = "0.5.1"
 tempfile = "3.8"
 mockito = "1.2"
+wasm-bindgen-test = "1.3"
 
 [[bench]]
 name = "benchmarks"
