@@ -143,6 +143,10 @@ enum Commands {
     #[command(subcommand)]
     Docs(commands::docs::DocsCommands),
 
+    /// Contract deployment analytics, dashboards, and reporting
+    #[command(subcommand)]
+    Analytics(commands::analytics::AnalyticsCommands),
+
     /// Execute an installed plugin command (e.g. `starforge defi ...`)
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -193,6 +197,7 @@ fn main() {
         Commands::TemplateVcs(_) => "template-vcs",
         Commands::Perf(_) => "perf",
         Commands::Docs(_) => "docs",
+        Commands::Analytics(_) => "analytics",
         Commands::External(_) => "external",
     }
     .to_string();
@@ -229,6 +234,7 @@ fn main() {
         Commands::TemplateVcs(cmd) => commands::template_vcs::handle(cmd),
         Commands::Perf(cmd) => commands::perf::handle(cmd),
         Commands::Docs(cmd) => commands::docs::handle(cmd),
+        Commands::Analytics(cmd) => commands::analytics::handle(cmd),
         Commands::External(args) => handle_external_plugin(args),
     };
     let duration = start.elapsed();

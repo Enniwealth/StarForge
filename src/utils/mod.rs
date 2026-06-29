@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod bindings;
 pub mod config;
 pub mod deploy_orchestrator;
